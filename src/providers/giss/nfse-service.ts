@@ -19,7 +19,9 @@ import type {
 import type { Certificate } from "../../infra/certificate.ts";
 import {
   callSoap,
+  observeExchange,
   type NfseOperation,
+  type SoapExchangeHook,
   type SoapService,
 } from "./soap-client.ts";
 import * as messages from "./messages/provided-services.ts";
@@ -60,6 +62,8 @@ export interface NfseServiceOptions {
   debug?: boolean;
   /** Substitui o transporte SOAP — para testes, ou para passar por um proxy */
   transport?: typeof callSoap;
+  /** Receives every exchange: the signed request and the raw response (or `undefined`) */
+  onExchange?: SoapExchangeHook;
 }
 
 interface PeriodFilter {
@@ -402,14 +406,15 @@ export class NfseService {
     data: string,
     policy: SignaturePolicy = { name: "raiz", apply: (xml, s) => s.sign(xml) },
   ): Promise<string> {
-    const { host, certificate, signer, version, debug, transport = callSoap } = this.#options;
+    const { host, certificate, signer, version, debug, onExchange, transport = callSoap } =
+      this.#options;
     const signed = policy.apply(data, signer);
 
     if (debug) {
       console.error(`\n--- ${operation} (${policy.name}) envio ---\n${signed}`);
     }
 
-    const response = await transport(operation, signed, {
+    const response = await observeExchange(onExchange, transport, operation, signed, {
       host,
       service: "nfse" satisfies SoapService,
       certificate,

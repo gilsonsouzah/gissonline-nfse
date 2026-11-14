@@ -92,6 +92,55 @@ export function buildEnvelope(
   );
 }
 
+/**
+ * Observer of one SOAP exchange: the signed request that was sent and the raw
+ * response envelope — `undefined` when none came back (network error,
+ * timeout, certificate refused before sending).
+ */
+export type SoapExchangeHook = (
+  operation: SoapOperation,
+  signed: string,
+  response: string | undefined,
+) => void;
+
+/**
+ * Runs `transport` and reports the exchange to `hook`, whatever the outcome:
+ * a response, a SOAP fault or an HTTP 5xx (the envelope is read off the error)
+ * or a failure with no response. The hook only observes — its own errors are
+ * swallowed so recording a call can never change what the call returns, which
+ * matters after a write has already gone out.
+ */
+export async function observeExchange(
+  hook: SoapExchangeHook | undefined,
+  transport: typeof callSoap,
+  operation: SoapOperation,
+  signed: string,
+  options: SoapCallOptions,
+): Promise<SoapResponse> {
+  if (!hook) return transport(operation, signed, options);
+  const notify = (response: string | undefined) => {
+    try {
+      hook(operation, signed, response);
+    } catch {
+      // observer failures must not leak into the call
+    }
+  };
+  try {
+    const response = await transport(operation, signed, options);
+    notify(response.envelope);
+    return response;
+  } catch (error) {
+    notify(envelopeOf(error));
+    throw error;
+  }
+}
+
+function envelopeOf(error: unknown): string | undefined {
+  if (error instanceof SoapFaultError) return error.envelope;
+  const envelope = (error as { details?: { envelope?: unknown } })?.details?.envelope;
+  return typeof envelope === "string" ? envelope : undefined;
+}
+
 export interface SoapCallOptions {
   /** Host base, ex.: `https://ws-suzano.giss.com.br` */
   host: string;
@@ -177,6 +226,7 @@ export function readSoapResponse(
         provider: "giss",
         operation,
         retryable: true,
+        details: { envelope },
         cause: error,
       });
     }
@@ -203,10 +253,11 @@ function extractOutputXml(envelope: string, operation: SoapOperation): string {
   const fault = /<(?:\w+:)?faultstring>([\s\S]*?)<\/(?:\w+:)?faultstring>/.exec(
     envelope,
   );
-  if (fault?.[1]) throw new SoapFaultError(operation, unescapeXml(fault[1]));
+  if (fault?.[1]) throw new SoapFaultError(operation, unescapeXml(fault[1]), envelope);
 
   throw new SoapFaultError(
     operation,
     `resposta inesperada: ${envelope.slice(0, 300)}`,
+    envelope,
   );
 }

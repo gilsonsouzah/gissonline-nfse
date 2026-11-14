@@ -59,6 +59,30 @@ await writeFile("nfse-573.pdf", await portal.invoiceDocument(invoice.internalId!
 await writeFile("nfse-573.xml", await portal.invoiceDocument(invoice.internalId!, "xml"));
 ```
 
+## Recording the SOAP exchanges
+
+`onExchange` receives every GissOnline SOAP call (`nfse` and `nfsc`) after it
+finishes: the operation, the **signed request** that was sent and the **raw
+response envelope**. It is the only way to keep the evidence of an exchange the
+library itself rejected, such as a SOAP fault.
+
+```ts
+const client = new NfseClient({
+  onExchange(operation, signed, response) {
+    // `response` is the raw envelope — also for a SOAP fault (the same text as
+    // `SoapFaultError.envelope`) and for an HTTP 5xx page. It is `undefined`
+    // when nothing came back: network error, timeout.
+    audit.save({ operation, signed, response });
+  },
+});
+```
+
+The hook only observes. It logs nothing, and an error it throws is swallowed, so
+a failing recorder never changes the outcome of a call that may have already
+issued an invoice. The signed request carries fiscal data, so store it as you
+would the invoice. The national issuer is not covered. `NfseService` and
+`NfscService` take the same `onExchange` option.
+
 ## Operations
 
 | Service | Operation | Method |

@@ -6,7 +6,12 @@ import type {
   PurchasedServiceBatch,
 } from "../../domain/types.ts";
 import type { Certificate } from "../../infra/certificate.ts";
-import { callSoap, type NfscOperation } from "./soap-client.ts";
+import {
+  callSoap,
+  observeExchange,
+  type NfscOperation,
+  type SoapExchangeHook,
+} from "./soap-client.ts";
 import {
   parseBatchResult,
   parseCancellationResult,
@@ -29,6 +34,8 @@ export interface NfscServiceOptions {
   debug?: boolean;
   /** Substitui o transporte SOAP — para testes, ou para passar por um proxy */
   transport?: typeof callSoap;
+  /** Receives every exchange: the signed request and the raw response (or `undefined`) */
+  onExchange?: SoapExchangeHook;
 }
 
 /**
@@ -150,12 +157,13 @@ export class NfscService {
     operation: NfscOperation,
     data: string,
   ): Promise<string> {
-    const { host, certificate, signer, debug, transport = callSoap } = this.#options;
+    const { host, certificate, signer, debug, onExchange, transport = callSoap } =
+      this.#options;
     const signed = rootSignature.apply(data, signer);
 
     if (debug) console.error(`\n--- ${operation} envio ---\n${signed}`);
 
-    const response = await transport(operation, signed, {
+    const response = await observeExchange(onExchange, transport, operation, signed, {
       host,
       service: "nfsc",
       certificate,

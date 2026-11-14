@@ -21,6 +21,7 @@ import {
   type IssuingProfile,
 } from "./storage/profile-repository.ts";
 import { NfseService } from "./providers/giss/nfse-service.ts";
+import type { SoapExchangeHook } from "./providers/giss/soap-client.ts";
 
 export interface NfseClientOptions extends Partial<GissConfig> {
   /**
@@ -31,6 +32,15 @@ export interface NfseClientOptions extends Partial<GissConfig> {
   certificate?: CertificateInput;
   /** Loga na saída de erro os XMLs enviados e recebidos */
   debug?: boolean;
+  /**
+   * Observes every GissOnline SOAP exchange (`nfse` and `nfsc`): the operation,
+   * the signed request and the raw response envelope — also on a SOAP fault
+   * (the envelope the `SoapFaultError` carries) and `undefined` when nothing
+   * came back (network error, timeout). It logs nothing itself, and an error
+   * thrown by the hook is swallowed so it cannot change the call's outcome.
+   * The national issuer is not covered.
+   */
+  onExchange?: SoapExchangeHook;
   /**
    * Perfil fiscal do prestador (item, CNAE, NBS, regime…), por cima do
    * `DEFAULT_PROFILE`. É o que `issue` usa; cada nota só informa o que varia.
@@ -70,7 +80,7 @@ export class NfseClient {
   readonly nfsc: NfscService;
 
   constructor(options: NfseClientOptions = {}) {
-    const { debug = false, certificate, profile, ...overrides } = options;
+    const { debug = false, onExchange, certificate, profile, ...overrides } = options;
     this.#profile = { ...DEFAULT_PROFILE, ...profile };
 
     // `CERT_PATH` e `CERT_PASSWORD` só existem para abrir o arquivo: quando o
@@ -95,6 +105,7 @@ export class NfseClient {
       signer,
       cityCode: this.config.cityCode,
       debug,
+      onExchange,
     };
 
     this.nfse = new NfseService({

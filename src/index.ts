@@ -47,6 +47,7 @@ export { SOAP_SERVICES } from "./providers/giss/soap-client.ts";
 export type {
   NfscOperation,
   NfseOperation,
+  SoapExchangeHook,
   SoapOperation,
   SoapService,
 } from "./providers/giss/soap-client.ts";

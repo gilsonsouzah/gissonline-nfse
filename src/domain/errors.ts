@@ -131,14 +131,17 @@ export class GissError extends NfseError {
 /** Falha no envelope SOAP — anterior à camada de negócio. */
 export class SoapFaultError extends NfseError {
   declare readonly operation: string;
+  /** The raw response envelope the fault came from, when the call got one back. */
+  readonly envelope?: string;
 
-  constructor(operation: string, detail: string) {
+  constructor(operation: string, detail: string, envelope?: string) {
     super(`SOAP Fault em ${operation}: ${detail}`, {
       code: "UNEXPECTED_RESPONSE",
       provider: "giss",
       operation,
     });
     this.name = "SoapFaultError";
+    this.envelope = envelope;
   }
 }
 
