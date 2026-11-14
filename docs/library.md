@@ -124,6 +124,11 @@ const mine = await portal.companyActivities(new Date());
 // [{ code: "6319400", serviceListItem: "1.09", description: "Portais…", rate: 4 }]
 ```
 
+Both throw a `PortalError` (`UNEXPECTED_RESPONSE`, not retryable) when the portal answers
+`200` with `sucesso: false` or with a `conteudo` that is not a list, instead of returning
+`[]`: a city's table is never empty, and an empty one would let the caller issue with no
+catalogue. A table that really is empty (`conteudo: []`) is still returned as it is.
+
 And the Fale Conosco messages, the portal's support channel:
 
 ```ts

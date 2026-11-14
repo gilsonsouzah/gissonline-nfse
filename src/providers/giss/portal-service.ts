@@ -196,6 +196,22 @@ function toActivity(raw: RawActivity): MunicipalActivity {
   };
 }
 
+/**
+ * O catálogo de atividades de uma cidade nunca é legitimamente vazio, então
+ * uma resposta que não é uma lista (ou que o portal marca `sucesso: false`)
+ * é falha — devolver `[]` faria quem chama tratar o município como sem
+ * atividades e seguir com um catálogo vazio.
+ */
+function activitiesFrom(
+  route: string,
+  response: ApiResponse<RawActivity[]> & { sucesso?: boolean },
+): MunicipalActivity[] {
+  if (response?.sucesso === false || !Array.isArray(response?.conteudo)) {
+    throw new PortalError(route, 200, response ?? null);
+  }
+  return response.conteudo.map(toActivity);
+}
+
 /** O que os dois métodos de login devolvem antes de escolher a empresa. */
 interface InitialToken {
   access_token: string;
@@ -580,12 +596,13 @@ export class PortalService {
     cityCode: string | number,
     appId?: string,
   ): Promise<MunicipalActivity[]> {
+    const route = `/service-atividade/api/atividade/v2/lista-atividades/${cityCode}`;
     const response = await requestJson<ApiResponse<RawActivity[]>>(
       `https://${cityCode}.giss.com.br`,
-      `/service-atividade/api/atividade/v2/lista-atividades/${cityCode}`,
+      route,
       { headers: { APP_ID: appIdFor(cityCode, appId) } },
     );
-    return (response.conteudo ?? []).map(toActivity);
+    return activitiesFrom(route, response);
   }
 
   /**
@@ -595,10 +612,9 @@ export class PortalService {
    */
   async companyActivities(on: Date | string = new Date()): Promise<MunicipalActivity[]> {
     const { clientId, companyId } = this.#session;
-    const response = await this.call<ApiResponse<RawActivity[]>>(
-      `/service-atividade/api/atividade/servicos/enquadrados/aliquotas/${clientId}/${companyId}/${isoDate(on)}`,
-    );
-    return (response.conteudo ?? []).map(toActivity);
+    const route = `/service-atividade/api/atividade/servicos/enquadrados/aliquotas/${clientId}/${companyId}/${isoDate(on)}`;
+    const response = await this.call<ApiResponse<RawActivity[]>>(route);
+    return activitiesFrom(route, response);
   }
 
   /** Remove um cadastro (o portal chama de "anular"). */
