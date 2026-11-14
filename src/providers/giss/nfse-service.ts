@@ -68,6 +68,10 @@ interface PeriodFilter {
   competencePeriod?: DateRange;
 }
 
+/** `A02`: a empresa já tem uma consulta em andamento. Passageiro, não é resposta sobre o RPS. */
+const isConcurrentQuery = (error: GissError): boolean =>
+  error.messages.some((message) => message.code === "A02");
+
 /** Operações do Web Service `nfse` — emissão e consulta de serviços prestados. */
 export class NfseService {
   readonly #options: NfseServiceOptions;
@@ -210,7 +214,14 @@ export class NfseService {
 
     // A espera esgotou, o que não quer dizer que a nota não saiu: o
     // processamento pode ter terminado depois. Quem decide é o RPS.
-    const late = await this.findByRps(query);
+    // O lote já foi aceito: um A02 aqui não pode jogar fora o protocolo, que é
+    // o que permite retomar. Fica `pending`, e quem chama consulta de novo.
+    let late: Nfse | undefined;
+    try {
+      late = await this.findByRps(query);
+    } catch (error) {
+      if (!(error instanceof GissError && isConcurrentQuery(error))) throw error;
+    }
     return late
       ? { status: "issued", invoice: late, protocol: batch.protocol, warnings: [] }
       : { status: "pending", protocol: batch.protocol, warnings: [] };
@@ -219,6 +230,11 @@ export class NfseService {
   /**
    * A NFS-e gerada a partir de um RPS, ou `undefined` se ainda não existe.
    * O serviço responde com erro quando não encontra, o que aqui não é falha.
+   *
+   * Exceção: `A02` ("Empresa já está com uma consulta em andamento") não diz
+   * nada sobre o RPS — outra consulta da mesma empresa estava rodando. Esse
+   * erro sobe (`GissError`, repetível com um intervalo), em vez de passar por
+   * "RPS inexistente".
    */
   async findByRps(args: {
     number: number | string;
@@ -230,7 +246,7 @@ export class NfseService {
       const { invoices } = await this.queryNfseByRps(args);
       return invoices[0];
     } catch (error) {
-      if (error instanceof GissError) return undefined;
+      if (error instanceof GissError && !isConcurrentQuery(error)) return undefined;
       throw error;
     }
   }

@@ -114,4 +114,11 @@ run without one rather than let a retry duplicate silently.
 
 `findByRps` is the same check on its own, returning `undefined` instead of
 throwing when the invoice does not exist yet.
+
+One answer is not "does not exist yet": `A02` (*Empresa já está com uma consulta em
+andamento*) means another query of the same company was running, so the service said
+nothing about the RPS. `findByRps` throws it as a `GissError` — wait a little and ask
+again. Inside `issueRps` it stops the send when it comes before the batch; when it comes
+after the batch was accepted, the outcome is `pending` with the `protocol`, never an
+error that would throw the protocol away.
 See [gotchas.md](gotchas.md) for the rest of what the live service taught us.

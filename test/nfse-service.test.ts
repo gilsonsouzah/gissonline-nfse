@@ -152,6 +152,55 @@ describe("NfseService.issueRps — emissão idempotente", () => {
   });
 });
 
+const A02 = responses.errors("ConsultarNfseRpsResposta", [
+  { code: "A02", message: "Empresa já está com uma consulta em andamento" },
+]);
+
+describe("NfseService — A02 (consulta concorrente) é transitório", () => {
+  it("findByRps: A02 sobe, não vira 'RPS inexistente'", async () => {
+    const { nfse } = service({ ConsultarNfsePorRps: () => A02 });
+    await assert.rejects(nfse.findByRps(rpsNumber), (error) => {
+      assert.ok(error instanceof GissError);
+      assert.equal(error.messages[0]?.code, "A02");
+      return true;
+    });
+  });
+
+  it("findByRps: outro erro do serviço segue sendo 'não existe'", async () => {
+    const { nfse } = service({ ConsultarNfsePorRps: () => NOT_FOUND });
+    assert.equal(await nfse.findByRps(rpsNumber), undefined);
+  });
+
+  it("issueRps: A02 na consulta prévia sobe e nada é enviado", async () => {
+    const { nfse, of } = service({ ConsultarNfsePorRps: () => A02 });
+    await assert.rejects(nfse.issueRps(withRps(), fast), GissError);
+    assert.equal(of("RecepcionarLoteRps").length, 0);
+  });
+
+  it("issueRps: A02 na consulta tardia não perde o protocolo (pending)", async () => {
+    const { nfse } = service({
+      ConsultarNfsePorRps: (_, nth) => (nth === 1 ? NOT_FOUND : A02),
+      RecepcionarLoteRps: () => responses.protocol("P-6"),
+      ConsultarLoteRps: () => responses.batch("2"),
+    });
+    const outcome = await nfse.issueRps(withRps(), fast);
+    assert.equal(outcome.status, "pending");
+    assert.equal(outcome.protocol, "P-6");
+  });
+
+  it("issueRps: erro de rede na consulta tardia continua subindo", async () => {
+    const { nfse } = service({
+      ConsultarNfsePorRps: (_, nth) => {
+        if (nth === 1) return NOT_FOUND;
+        throw new TransportError("caiu");
+      },
+      RecepcionarLoteRps: () => responses.protocol("P-7"),
+      ConsultarLoteRps: () => responses.batch("2"),
+    });
+    await assert.rejects(nfse.issueRps(withRps(), fast), TransportError);
+  });
+});
+
 describe("NfseService — assinatura por operação", () => {
   it("lote: uma assinatura por RPS e outra no LoteRps, todas válidas", async () => {
     const { nfse, of } = service({ RecepcionarLoteRps: () => responses.protocol("P") });
