@@ -68,6 +68,14 @@ interface PeriodFilter {
   competencePeriod?: DateRange;
 }
 
+/**
+ * O lote terminou com erro (`Situacao` 3) e a resposta veio só com
+ * `ListaMensagemRetornoLote`, sem `ListaNfse` — o caso do E163 em Guarulhos.
+ * Qualquer outra situação (1 não recebido, 2 não processado) é "ainda não".
+ */
+const isRejectedBatch = (error: GissError): boolean =>
+  /<(?:\w+:)?Situacao>\s*3\s*<\/(?:\w+:)?Situacao>/.test(error.xml);
+
 /** Operações do Web Service `nfse` — emissão e consulta de serviços prestados. */
 export class NfseService {
   readonly #options: NfseServiceOptions;
@@ -185,9 +193,15 @@ export class NfseService {
       let result: BatchResult | undefined;
       try {
         result = await this.queryRpsBatch(batch.protocol!);
-      } catch {
-        // o protocolo costuma responder erro enquanto o lote não foi lido;
-        // a consulta por RPS abaixo é quem dá a palavra final
+      } catch (error) {
+        // `execute` lança antes de o lote ser lido quando a resposta traz
+        // mensagens. Com Situacao 3 elas são a rejeição final do lote (as
+        // mesmas que `parseBatchResult` devolveria em `warnings`).
+        if (error instanceof GissError && isRejectedBatch(error)) {
+          return { status: "rejected", protocol: batch.protocol, warnings: error.messages };
+        }
+        // nas demais, o protocolo costuma responder erro enquanto o lote não
+        // foi lido; a consulta por RPS abaixo é quem dá a palavra final
       }
 
       const invoice = result?.invoices[0];

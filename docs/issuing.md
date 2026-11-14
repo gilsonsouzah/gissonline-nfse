@@ -107,6 +107,11 @@ switch (outcome.status) {
 }
 ```
 
+A batch the service refuses outright (`Situacao` 3) comes back as `rejected` with the
+service's messages in `warnings`, whether they arrive next to the batch data or alone in
+`ListaMensagemRetornoLote` (the E163 of a missing rate). A rejection is final: `issueRps`
+does not wait for the remaining attempts, and a retry needs a corrected RPS.
+
 The number has to come from **your** side and be stable across attempts — a
 number generated per call defeats the whole thing. In a multi-company setup
 that means reserving it transactionally before sending. `issueRps` refuses to

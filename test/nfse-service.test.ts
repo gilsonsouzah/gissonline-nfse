@@ -101,6 +101,62 @@ describe("NfseService.issueRps — emissão idempotente", () => {
     assert.deepEqual(outcome.warnings, [{ code: "E163", message: "Alíquota ausente", correction: undefined }]);
   });
 
+  it("lote rejeitado só com ListaMensagemRetornoLote (E163): rejected, com as mensagens", async () => {
+    const { nfse, of } = service({
+      ConsultarNfsePorRps: () => NOT_FOUND,
+      RecepcionarLoteRps: () => responses.protocol("P-8"),
+      ConsultarLoteRps: () =>
+        responses.rejectedBatch([{ code: "E163", message: "Alíquota ausente", correction: undefined }]),
+    });
+    const outcome = await nfse.issueRps(withRps(), fast);
+    assert.equal(outcome.status, "rejected");
+    assert.equal(outcome.protocol, "P-8");
+    assert.deepEqual(outcome.warnings, [{ code: "E163", message: "Alíquota ausente", correction: undefined }]);
+    // rejeição é final: não espera as outras tentativas nem consulta o RPS de novo
+    assert.equal(of("ConsultarLoteRps").length, 1);
+    assert.equal(of("ConsultarNfsePorRps").length, 1);
+  });
+
+  it("lote rejeitado com várias mensagens: devolve todas, na ordem", async () => {
+    const { nfse } = service({
+      ConsultarNfsePorRps: () => NOT_FOUND,
+      RecepcionarLoteRps: () => responses.protocol("P-9"),
+      ConsultarLoteRps: () =>
+        responses.rejectedBatch([
+          { code: "E163", message: "Alíquota ausente" },
+          { code: "E160", message: "Arquivo em desacordo com o XML Schema" },
+        ]),
+    });
+    const outcome = await nfse.issueRps(withRps(), fast);
+    assert.equal(outcome.status, "rejected");
+    assert.deepEqual(
+      outcome.warnings.map((w) => w.code),
+      ["E163", "E160"],
+    );
+  });
+
+  it("mensagem de lote com situação 2 (ainda não processado) não é rejeição", async () => {
+    const { nfse, of } = service({
+      ConsultarNfsePorRps: () => NOT_FOUND,
+      RecepcionarLoteRps: () => responses.protocol("P-10"),
+      ConsultarLoteRps: () => responses.rejectedBatch([{ code: "E4", message: "Lote não processado" }], "2"),
+    });
+    const outcome = await nfse.issueRps(withRps(), fast);
+    assert.equal(outcome.status, "pending");
+    assert.equal(of("ConsultarLoteRps").length, 3);
+  });
+
+  it("queryRpsBatch continua lançando GissError com as mensagens (a rejeição só muda no issueRps)", async () => {
+    const { nfse } = service({
+      ConsultarLoteRps: () => responses.rejectedBatch([{ code: "E163", message: "Alíquota ausente" }]),
+    });
+    await assert.rejects(nfse.queryRpsBatch("P-8"), (error) => {
+      assert.ok(error instanceof GissError);
+      assert.equal(error.messages[0]?.code, "E163");
+      return true;
+    });
+  });
+
   it("espera esgotada e nada encontrado: pending, com o protocolo para retomar", async () => {
     const { nfse, of } = service({
       ConsultarNfsePorRps: () => NOT_FOUND,

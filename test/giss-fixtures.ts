@@ -62,6 +62,21 @@ export const responses = {
     messages("MensagemAlertaRetorno", warnings) +
     `</ConsultarLoteRpsResposta>`,
 
+  /**
+   * Lote rejeitado inteiro: `Situacao` 3 e só `ListaMensagemRetornoLote`, que
+   * leva a identificação do RPS em cada mensagem. É a forma do E163.
+   */
+  rejectedBatch: (list: (ServiceMessage & { rps?: string })[], status = "3") =>
+    `<ConsultarLoteRpsResposta ${NS}><Situacao>${status}</Situacao><ListaMensagemRetornoLote>` +
+    list
+      .map(
+        (m) =>
+          `<MensagemRetorno><IdentificacaoRps><Numero>${m.rps ?? "42"}</Numero><Serie>A</Serie><Tipo>1</Tipo></IdentificacaoRps>` +
+          `<Codigo>${m.code}</Codigo><Mensagem>${m.message}</Mensagem></MensagemRetorno>`,
+      )
+      .join("") +
+    `</ListaMensagemRetornoLote></ConsultarLoteRpsResposta>`,
+
   query: (root: string, invoices: InvoiceFixture[], page?: string) =>
     `<${root} ${NS}><ListaNfse>${invoices.map(compNfse).join("")}${page ? `<Pagina>${page}</Pagina>` : ""}</ListaNfse></${root}>`,
 
