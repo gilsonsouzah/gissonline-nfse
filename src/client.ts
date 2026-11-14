@@ -39,6 +39,11 @@ export interface NfseClientOptions extends Partial<GissConfig> {
    */
   onExchange?: (exchange: SoapExchange) => void;
   /**
+   * Limite, em milissegundos, de cada chamada SOAP (`nfse` e `nfsc`). Quando
+   * estoura, a chamada falha com erro de timeout. Padrão: 60000.
+   */
+  timeoutMs?: number;
+  /**
    * Perfil fiscal do prestador (item, CNAE, NBS, regime…), por cima do
    * `DEFAULT_PROFILE`. É o que `issue` usa; cada nota só informa o que varia.
    */
@@ -89,7 +94,7 @@ export class NfseClient {
   readonly nfsc: NfscService;
 
   constructor(options: NfseClientOptions = {}) {
-    const { debug = false, certificate, profile, onExchange, ...overrides } = options;
+    const { debug = false, certificate, profile, onExchange, timeoutMs, ...overrides } = options;
     this.#profile = { ...DEFAULT_PROFILE, ...profile };
 
     // `CERT_PATH` e `CERT_PASSWORD` só existem para abrir o arquivo: quando o
@@ -114,6 +119,7 @@ export class NfseClient {
       signer,
       cityCode: this.config.cityCode,
       debug,
+      ...(timeoutMs !== undefined && { timeoutMs }),
       ...(onExchange && { transport: observed(onExchange) }),
     };
 
