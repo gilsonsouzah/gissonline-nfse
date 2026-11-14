@@ -27,6 +27,8 @@ export interface NfscServiceOptions {
   taker: PartyIdentification;
   cityCode: string | number;
   debug?: boolean;
+  /** Limite de cada chamada SOAP, em milissegundos; padrão 60000 */
+  timeoutMs?: number;
   /** Substitui o transporte SOAP — para testes, ou para passar por um proxy */
   transport?: typeof callSoap;
 }
@@ -150,7 +152,7 @@ export class NfscService {
     operation: NfscOperation,
     data: string,
   ): Promise<string> {
-    const { host, certificate, signer, debug, transport = callSoap } = this.#options;
+    const { host, certificate, signer, debug, timeoutMs, transport = callSoap } = this.#options;
     const signed = rootSignature.apply(data, signer);
 
     if (debug) console.error(`\n--- ${operation} envio ---\n${signed}`);
@@ -159,6 +161,7 @@ export class NfscService {
       host,
       service: "nfsc",
       certificate,
+      ...(timeoutMs !== undefined && { timeoutMs }),
     });
 
     if (debug) console.error(`\n--- ${operation} retorno ---\n${response.xml}`);

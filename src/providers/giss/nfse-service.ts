@@ -58,6 +58,8 @@ export interface NfseServiceOptions {
   cityCode: string | number;
   version: string;
   debug?: boolean;
+  /** Limite de cada chamada SOAP, em milissegundos; padrão 60000 */
+  timeoutMs?: number;
   /** Substitui o transporte SOAP — para testes, ou para passar por um proxy */
   transport?: typeof callSoap;
 }
@@ -426,7 +428,7 @@ export class NfseService {
     data: string,
     policy: SignaturePolicy = { name: "raiz", apply: (xml, s) => s.sign(xml) },
   ): Promise<string> {
-    const { host, certificate, signer, version, debug, transport = callSoap } = this.#options;
+    const { host, certificate, signer, version, debug, timeoutMs, transport = callSoap } = this.#options;
     const signed = policy.apply(data, signer);
 
     if (debug) {
@@ -438,6 +440,7 @@ export class NfseService {
       service: "nfse" satisfies SoapService,
       certificate,
       header: messages.buildHeader(version),
+      ...(timeoutMs !== undefined && { timeoutMs }),
     });
 
     if (debug) console.error(`\n--- ${operation} retorno ---\n${response.xml}`);

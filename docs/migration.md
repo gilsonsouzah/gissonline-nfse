@@ -71,6 +71,7 @@ The full table of codes is in [errors.md](errors.md).
   or the error) reaches your callback, to store the XML of each operation.
 - `timeoutMs` on the portal credentials, and as the third argument of
   `PortalService.listActivities` (default 60 s).
+- `timeoutMs` on `NfseClient`: limit of each SOAP call, `nfse` and `nfsc` (default 60 s).
 - `issueRps` no longer treats `A02` (concurrent query) as "RPS not found", keeps the
   messages of a rejected batch, and does not lose the protocol when the final lookup fails.
 - `PortalService.listActivities` throws a `PortalError` when the answer has no list,
