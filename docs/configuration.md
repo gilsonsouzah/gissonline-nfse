@@ -120,6 +120,23 @@ invoice already accepted by the city hall, with the formats corrected for sendin
 **Check them with your accountant before issuing** — the defaults describe a Simples
 Nacional provider, ISS not withheld, service item 01.04.
 
+## Timeouts
+
+Every request gives up after 60 s. Lower it when a caller has a deadline of its own
+(an API request, a queue job):
+
+```ts
+const client = new NfseClient({ timeoutMs: 8_000 });          // nfse and nfsc SOAP calls
+const portal = await PortalService.authenticate({ ...credentials, timeoutMs: 8_000 });
+await PortalService.listActivities("3552502", undefined, 8_000); // public route, no session
+```
+
+`timeoutMs` on the client covers the GissOnline SOAP calls; on the portal credentials it
+covers the login and every later call. A call that runs out of time fails with a
+retryable `TransportError`, and on a write (`outcomeUnknown: true`) the same RPS number
+is what makes repeating safe. See [errors.md](errors.md). The national issuer keeps its
+own 60 s.
+
 ## Test environment
 
 The Services Provided manual v1.6 announces `ws-homologacao.giss.com.br`, but that host

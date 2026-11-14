@@ -32,6 +32,12 @@ export interface NfseClientOptions extends Partial<GissConfig> {
   /** Loga na saída de erro os XMLs enviados e recebidos */
   debug?: boolean;
   /**
+   * Time limit of each GissOnline SOAP call (`nfse` and `nfsc`), in ms. The
+   * default stays 60000. A call that hits it fails with a retryable
+   * `TransportError`, and on a write the outcome is unknown (see errors.md).
+   */
+  timeoutMs?: number;
+  /**
    * Perfil fiscal do prestador (item, CNAE, NBS, regime…), por cima do
    * `DEFAULT_PROFILE`. É o que `issue` usa; cada nota só informa o que varia.
    */
@@ -70,7 +76,7 @@ export class NfseClient {
   readonly nfsc: NfscService;
 
   constructor(options: NfseClientOptions = {}) {
-    const { debug = false, certificate, profile, ...overrides } = options;
+    const { debug = false, timeoutMs, certificate, profile, ...overrides } = options;
     this.#profile = { ...DEFAULT_PROFILE, ...profile };
 
     // `CERT_PATH` e `CERT_PASSWORD` só existem para abrir o arquivo: quando o
@@ -95,6 +101,7 @@ export class NfseClient {
       signer,
       cityCode: this.config.cityCode,
       debug,
+      timeoutMs,
     };
 
     this.nfse = new NfseService({

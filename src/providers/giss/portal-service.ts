@@ -3,7 +3,7 @@ import { ConfigError, PortalError, ValidationError } from "../../domain/errors.t
 import type { Address } from "../../domain/types.ts";
 import { findMunicipalityByCode } from "./municipalities.ts";
 import { loadCertificate, type CertificateInput } from "../../infra/certificate.ts";
-import { requestBinary, requestJson } from "./http-client.ts";
+import { PORTAL_TIMEOUT_MS, requestBinary, requestJson } from "./http-client.ts";
 import { digitsOnly, isoDate } from "../../infra/xml.ts";
 
 /**
@@ -41,6 +41,8 @@ export interface PortalCredentials {
   cnpj?: string;
   /** `APP_ID` da cidade, quando ela não está em `MUNICIPALITIES` */
   appId?: string;
+  /** Time limit of each portal request, in ms (default 60000) */
+  timeoutMs?: number;
 }
 
 /**
@@ -61,6 +63,8 @@ export interface PortalCertificateCredentials {
   cnpj?: string;
   /** `APP_ID` da cidade, quando ela não está em `MUNICIPALITIES` */
   appId?: string;
+  /** Time limit of each portal request, in ms (default 60000) */
+  timeoutMs?: number;
 }
 
 /** As duas formas de entrar no portal. */
@@ -218,21 +222,26 @@ async function passwordLogin(
   appId: string,
   credentials: PortalCredentials,
 ): Promise<InitialToken> {
-  return requestJson<InitialToken>(base, "/service-empresa/api/login/token", {
-    method: "POST",
-    headers: {
-      APP_ID: appId,
-      PARAM_USER: "CodCliente",
-      "Content-Type": "application/x-www-form-urlencoded",
+  return requestJson<InitialToken>(
+    base,
+    "/service-empresa/api/login/token",
+    {
+      method: "POST",
+      headers: {
+        APP_ID: appId,
+        PARAM_USER: "CodCliente",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        grant_type: "password",
+        username: digitsOnly(credentials.login),
+        password: credentials.password,
+        tipoLogin: "0",
+        idParametroInicial: "2",
+      }).toString(),
     },
-    body: new URLSearchParams({
-      grant_type: "password",
-      username: digitsOnly(credentials.login),
-      password: credentials.password,
-      tipoLogin: "0",
-      idParametroInicial: "2",
-    }).toString(),
-  });
+    credentials.timeoutMs,
+  );
 }
 
 /**
@@ -259,6 +268,7 @@ async function certificateLogin(
     base,
     "/service-empresa/api/login/certificado/nonce",
     { headers: { APP_ID: appId } },
+    credentials.timeoutMs,
   );
 
   const signer = createSign("sha256");
@@ -277,6 +287,7 @@ async function certificateLogin(
       },
       body: JSON.stringify({ certificateBase64, signature, nonce }),
     },
+    credentials.timeoutMs,
   );
 
   const token = response.conteudo.access_token;
@@ -369,6 +380,7 @@ export class PortalService {
   readonly base: string;
   #session: PortalSession;
   readonly #credentials: AnyPortalCredentials;
+  readonly #timeoutMs: number;
 
   private constructor(
     base: string,
@@ -378,6 +390,7 @@ export class PortalService {
     this.base = base;
     this.#session = session;
     this.#credentials = credentials;
+    this.#timeoutMs = credentials.timeoutMs ?? PORTAL_TIMEOUT_MS;
   }
 
   get session(): PortalSession {
@@ -425,9 +438,14 @@ export class PortalService {
           tipoEmpresa: number;
         }>;
       };
-    }>(base, "/service-empresa/api/login/permissao", {
-      headers: { Authorization: `Bearer ${initial.access_token}` },
-    });
+    }>(
+      base,
+      "/service-empresa/api/login/permissao",
+      {
+        headers: { Authorization: `Bearer ${initial.access_token}` },
+      },
+      credentials.timeoutMs,
+    );
 
     const companies = permissions.conteudo.empresas;
     const target = credentials.cnpj
@@ -458,6 +476,7 @@ export class PortalService {
           refresh_token: initial.access_token,
         }).toString(),
       },
+      credentials.timeoutMs,
     );
 
     return new PortalService(
@@ -579,11 +598,13 @@ export class PortalService {
   static async listActivities(
     cityCode: string | number,
     appId?: string,
+    timeoutMs?: number,
   ): Promise<MunicipalActivity[]> {
     const response = await requestJson<ApiResponse<RawActivity[]>>(
       `https://${cityCode}.giss.com.br`,
       `/service-atividade/api/atividade/v2/lista-atividades/${cityCode}`,
       { headers: { APP_ID: appIdFor(cityCode, appId) } },
+      timeoutMs,
     );
     return (response.conteudo ?? []).map(toActivity);
   }
@@ -628,6 +649,7 @@ export class PortalService {
         `/service-relatorio/api/relatorio/${format}/${this.#session.clientId}/nota/${internalId}`,
         { headers },
         `application/${format}`,
+        this.#timeoutMs,
       ),
     );
   }
@@ -703,6 +725,7 @@ export class PortalService {
         `/service-empresa/api/fale-conosco/download?idMensagem=${messageId}&idAnexo=${attachmentId}`,
         { headers },
         "application/octet-stream",
+        this.#timeoutMs,
       ),
     );
   }
@@ -710,10 +733,12 @@ export class PortalService {
   /** Chamada JSON autenticada. */
   private async call<T>(route: string, init: RequestInit = {}): Promise<T> {
     return this.withSession((headers) =>
-      requestJson<T>(this.base, route, {
-        ...init,
-        headers: { ...headers, ...init.headers },
-      }),
+      requestJson<T>(
+        this.base,
+        route,
+        { ...init, headers: { ...headers, ...init.headers } },
+        this.#timeoutMs,
+      ),
     );
   }
 
